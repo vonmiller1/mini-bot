@@ -1,0 +1,30 @@
+# DreamFactory Mini — Instant REST APIs from your database
+#
+# Usage:
+#   ADMIN_PASSWORD=YourSecurePassword123 docker compose up -d
+#   (default admin email: admin@dreamfactory.com)
+#
+# Then connect your database as a service via the API:
+#   POST http://localhost:8088/api/v2/system/service
+#
+# Supports: PostgreSQL, MySQL, SQL Server, SQLite, RWS, SOAP
+
+services:
+  df-mini:
+    build: .
+    environment:
+      SERVERNAME: localhost
+      DB_CONNECTION: sqlite
+      APP_LOG_LEVEL: warning
+      LOG_TO_STDOUT: "true"
+      APP_DEBUG: "false"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL (e.g. you@yourcompany.com)}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD (min 16 chars)}
+    volumes:
+      - df-mini-storage:/opt/dreamfactory/storage
+    ports:
+      - "8088:80"
+
+volumes:
+  df-mini-storage:
+    driver: local
