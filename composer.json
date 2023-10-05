@@ -1,0 +1,71 @@
+{
+  "name": "dreamfactory/df-mini",
+  "description": "DreamFactory Mini — instant REST APIs from your database.",
+  "keywords": ["api", "dreamfactory", "rest", "database"],
+  "homepage": "https://www.dreamfactory.com/",
+  "license": "Apache-2.0",
+  "type": "project",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/dreamfactorysoftware/df-mysqldb.git"
+    },
+    {
+      "type": "vcs",
+      "url": "https://github.com/dreamfactorysoftware/df-sqlsrv.git"
+    }
+  ],
+  "require": {
+    "php": "^8.3",
+    "laravel/framework": "^11.15",
+    "laravel/helpers": "^1.7",
+    "laravel/tinker": "^2.9",
+    "dreamfactory/df-core": "~1.0.13",
+    "dreamfactory/df-system": "~0.6.3",
+    "dreamfactory/df-user": "~0.17.0",
+    "dreamfactory/df-cache": "~0.13.0",
+    "dreamfactory/df-apidoc": "~0.8.3",
+    "dreamfactory/df-database": "~1.4.0",
+    "dreamfactory/df-file": "~0.9.0",
+    "dreamfactory/df-sqldb": "~1.4.0",
+    "dreamfactory/df-mysqldb": "~0.4.0",
+    "dreamfactory/df-sqlsrv": "~0.18.2",
+    "dreamfactory/df-rws": "~0.18.2",
+    "dreamfactory/df-soap": "~0.17.2"
+  },
+  "autoload": {
+    "classmap": [
+      "database/seeds",
+      "database/factories"
+    ],
+    "psr-4": {
+      "DreamFactory\\": "app/"
+    }
+  },
+  "extra": {
+    "installer-paths": {
+      "public/{$name}/": ["type:dreamfactory-app"]
+    },
+    "laravel": {
+      "dont-discover": ["mongodb/laravel-mongodb"]
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+      "@php artisan package:discover --ansi"
+    ]
+  },
+  "config": {
+    "platform": { "php": "8.3" },
+    "preferred-install": "dist",
+    "sort-packages": true,
+    "optimize-autoloader": true,
+    "allow-plugins": {
+      "php-http/discovery": true,
+      "dreamfactory/installer": true
+    }
+  }
+}
