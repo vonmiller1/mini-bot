@@ -1,5 +1,7 @@
 # DreamFactory Mini — LLM Integration Guide
 
+> Use environment variables for credentials in real deployments; never commit passwords or API keys to source control.
+
 > DreamFactory Mini (df-mini) turns any SQL database into a REST API instantly.
 > Single Docker container. No admin UI. Everything is done via HTTP API calls.
 > Base URL: http://localhost:8088/api/v2
