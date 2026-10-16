@@ -32,7 +32,8 @@ sed -i "s/CACHE_DRIVER=.*/CACHE_DRIVER=file/" .env
 
 # Set or generate APP_KEY
 if [ -n "$APP_KEY" ]; then
-  sed -i "s#APP_KEY=.*#APP_KEY=$APP_KEY#" .env
+  escaped_app_key=$(printf '%s' "$APP_KEY" | sed 's/[\\&#|]/\\&/g')
+  sed -i "s#APP_KEY=.*#APP_KEY=${escaped_app_key}#" .env
 elif ! grep -q 'APP_KEY=base64:' .env; then
   php artisan key:generate
 fi
@@ -44,6 +45,12 @@ fi
 
 # Clear cached config from build stage
 rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
+
+# Enforce minimum admin password length before touching the database
+if [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -lt 16 ]; then
+  echo "ERROR: ADMIN_PASSWORD must be at least 16 characters." >&2
+  exit 1
+fi
 
 # Create admin user and run migrations
 if [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ]; then
