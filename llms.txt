@@ -1,0 +1,637 @@
+# DreamFactory Mini — LLM Integration Guide
+
+> DreamFactory Mini (df-mini) turns any SQL database into a REST API instantly.
+> Single Docker container. No admin UI. Everything is done via HTTP API calls.
+> Base URL: http://localhost:8088/api/v2
+
+## Key Facts
+
+- All responses are JSON
+- All request bodies must be JSON with Content-Type: application/json (except login which uses form-urlencoded)
+- Authentication: JWT session tokens via X-DreamFactory-Session-Token header, or API keys via X-DreamFactory-API-Key header
+- Every database table automatically gets full CRUD REST endpoints
+- Records are always wrapped in a "resource" array for bulk operations
+- Supported databases: PostgreSQL (pgsql), MySQL (mysql), SQL Server (sqlsrv), SQLite (sqlite)
+- Also supports: Remote Web Services (rws), SOAP (soap)
+
+## Setup
+
+```bash
+ADMIN_EMAIL=you@yourcompany.com ADMIN_PASSWORD=SecurePassword1234 docker compose up -d
+```
+
+Wait ~4 seconds for first boot. API is then available at http://localhost:8088/api/v2
+
+## Authentication
+
+### Login (get session token)
+
+```
+POST /api/v2/system/admin/session
+Content-Type: application/x-www-form-urlencoded
+
+email=you@yourcompany.com&password=SecurePassword1234
+```
+
+Response:
+```json
+{
+  "session_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "session_id": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "id": 1,
+  "name": "Admin User",
+  "first_name": "Admin",
+  "last_name": "User",
+  "email": "you@yourcompany.com",
+  "is_sys_admin": true,
+  "host": "localhost"
+}
+```
+
+IMPORTANT: Use the session_token value in all subsequent requests as:
+```
+X-DreamFactory-Session-Token: <session_token>
+```
+
+### Logout
+
+```
+DELETE /api/v2/system/admin/session
+X-DreamFactory-Session-Token: <token>
+```
+
+## Connect a Database
+
+### Create a database service
+
+```
+POST /api/v2/system/service
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body (PostgreSQL example):
+```json
+{
+  "name": "mydb",
+  "label": "My Database",
+  "type": "pgsql",
+  "config": {
+    "host": "db-host",
+    "port": 5432,
+    "database": "my_database",
+    "username": "db_user",
+    "password": "db_password"
+  }
+}
+```
+
+Body (MySQL example):
+```json
+{
+  "name": "mydb",
+  "label": "My Database",
+  "type": "mysql",
+  "config": {
+    "host": "db-host",
+    "port": 3306,
+    "database": "my_database",
+    "username": "db_user",
+    "password": "db_password"
+  }
+}
+```
+
+Body (SQL Server example):
+```json
+{
+  "name": "mydb",
+  "label": "My Database",
+  "type": "sqlsrv",
+  "config": {
+    "host": "db-host",
+    "port": 1433,
+    "database": "my_database",
+    "username": "db_user",
+    "password": "db_password"
+  }
+}
+```
+
+Body (SQLite example):
+```json
+{
+  "name": "mydb",
+  "label": "My Database",
+  "type": "sqlite",
+  "config": {
+    "database": "/path/to/database.sqlite"
+  }
+}
+```
+
+Response:
+```json
+{
+  "id": 7,
+  "name": "mydb",
+  "label": "My Database",
+  "type": "pgsql",
+  "is_active": true
+}
+```
+
+After creating a service, all tables in that database are immediately available as REST endpoints under /api/v2/{service_name}/.
+
+### Service type values
+
+| Database       | type value |
+|----------------|------------|
+| PostgreSQL     | pgsql      |
+| MySQL/MariaDB  | mysql      |
+| SQL Server     | sqlsrv     |
+| SQLite         | sqlite     |
+| HTTP/REST proxy| rws        |
+| SOAP           | soap       |
+
+## Data Operations (CRUD)
+
+All examples below assume a service named "mydb" exists. Replace {table} with your actual table name.
+
+### List all tables
+
+```
+GET /api/v2/mydb/_table
+X-DreamFactory-Session-Token: <token>
+```
+
+Response:
+```json
+{
+  "resource": [
+    {"name": "users"},
+    {"name": "orders"},
+    {"name": "products"}
+  ]
+}
+```
+
+### Get all records from a table
+
+```
+GET /api/v2/mydb/_table/{table}
+X-DreamFactory-Session-Token: <token>
+```
+
+Response:
+```json
+{
+  "resource": [
+    {"id": 1, "name": "Alice", "email": "alice@example.com"},
+    {"id": 2, "name": "Bob", "email": "bob@example.com"}
+  ]
+}
+```
+
+### Get a single record by ID
+
+```
+GET /api/v2/mydb/_table/{table}/{id}
+X-DreamFactory-Session-Token: <token>
+```
+
+Response:
+```json
+{"id": 1, "name": "Alice", "email": "alice@example.com"}
+```
+
+### Filter, sort, limit, and select fields
+
+```
+GET /api/v2/mydb/_table/{table}?filter={filter}&order={order}&limit={limit}&offset={offset}&fields={fields}
+X-DreamFactory-Session-Token: <token>
+```
+
+Query parameters:
+- filter: SQL-like filter string. Examples:
+  - filter=age>30
+  - filter=name='Alice'
+  - filter=status='active' and created_at>'2024-01-01'
+  - filter=name like '%smith%'
+  - filter=id in (1,2,3)
+- order: Sort field and direction. Examples: order=name ASC, order=created_at DESC
+- limit: Max records to return (integer)
+- offset: Records to skip (integer, for pagination)
+- fields: Comma-separated column names. Example: fields=id,name,email
+- include_count: Set to true to include total record count in response
+
+Example with all parameters:
+```
+GET /api/v2/mydb/_table/users?filter=age>30&order=name%20ASC&limit=10&offset=0&fields=id,name,email&include_count=true
+```
+
+Response with include_count=true:
+```json
+{
+  "resource": [
+    {"id": 3, "name": "Charlie", "email": "charlie@example.com"}
+  ],
+  "meta": {
+    "count": 1,
+    "total": 47
+  }
+}
+```
+
+### Create records
+
+```
+POST /api/v2/mydb/_table/{table}
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body (single record):
+```json
+{
+  "resource": [
+    {"name": "Jane", "email": "jane@example.com", "age": 28}
+  ]
+}
+```
+
+Body (multiple records):
+```json
+{
+  "resource": [
+    {"name": "Jane", "email": "jane@example.com"},
+    {"name": "John", "email": "john@example.com"}
+  ]
+}
+```
+
+Response:
+```json
+{
+  "resource": [
+    {"id": 3},
+    {"id": 4}
+  ]
+}
+```
+
+IMPORTANT: Records must always be wrapped in a "resource" array, even for a single record.
+
+### Update a record by ID
+
+```
+PATCH /api/v2/mydb/_table/{table}/{id}
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body:
+```json
+{"name": "Jane Updated", "age": 29}
+```
+
+Response:
+```json
+{"id": 3}
+```
+
+### Update multiple records
+
+```
+PATCH /api/v2/mydb/_table/{table}
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body:
+```json
+{
+  "resource": [
+    {"id": 3, "name": "Jane Updated"},
+    {"id": 4, "name": "John Updated"}
+  ]
+}
+```
+
+### Delete a record by ID
+
+```
+DELETE /api/v2/mydb/_table/{table}/{id}
+X-DreamFactory-Session-Token: <token>
+```
+
+Response:
+```json
+{"id": 3}
+```
+
+### Delete multiple records
+
+```
+DELETE /api/v2/mydb/_table/{table}?ids=3,4,5
+X-DreamFactory-Session-Token: <token>
+```
+
+### Delete by filter
+
+```
+DELETE /api/v2/mydb/_table/{table}?filter=status='inactive'
+X-DreamFactory-Session-Token: <token>
+```
+
+## Table Schema
+
+### Get table schema (columns, types, etc.)
+
+```
+GET /api/v2/mydb/_schema/{table}
+X-DreamFactory-Session-Token: <token>
+```
+
+Response:
+```json
+{
+  "name": "users",
+  "field": [
+    {"name": "id", "type": "integer", "db_type": "int", "is_primary_key": true, "auto_increment": true},
+    {"name": "name", "type": "string", "db_type": "varchar(255)", "is_primary_key": false},
+    {"name": "email", "type": "string", "db_type": "varchar(255)", "is_primary_key": false},
+    {"name": "age", "type": "integer", "db_type": "int", "is_primary_key": false}
+  ]
+}
+```
+
+### List all table schemas
+
+```
+GET /api/v2/mydb/_schema
+X-DreamFactory-Session-Token: <token>
+```
+
+## System Administration
+
+### List all services
+
+```
+GET /api/v2/system/service
+X-DreamFactory-Session-Token: <token>
+```
+
+### Get a specific service
+
+```
+GET /api/v2/system/service/{id}
+X-DreamFactory-Session-Token: <token>
+```
+
+### Delete a service
+
+```
+DELETE /api/v2/system/service/{id}
+X-DreamFactory-Session-Token: <token>
+```
+
+### Create a role
+
+```
+POST /api/v2/system/role
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body:
+```json
+{
+  "name": "readonly",
+  "description": "Read-only access",
+  "is_active": true,
+  "role_service_access_by_role_id": [
+    {
+      "service_id": 7,
+      "component": "_table/*",
+      "verb_mask": 1,
+      "requestor_mask": 3,
+      "filters": [],
+      "filter_op": "AND"
+    }
+  ]
+}
+```
+
+verb_mask values: 1=GET, 2=POST, 4=PUT, 8=PATCH, 16=DELETE. Combine with addition (e.g., 1+2=3 for GET+POST).
+requestor_mask values: 1=API, 2=SCRIPT, 3=API+SCRIPT
+
+### Create an app (API key)
+
+```
+POST /api/v2/system/app
+Content-Type: application/json
+X-DreamFactory-Session-Token: <token>
+```
+
+Body:
+```json
+{
+  "name": "my-app",
+  "api_key": "your-generated-api-key-here",
+  "role_id": 1,
+  "is_active": true,
+  "type": 0
+}
+```
+
+After creating an app, use the API key in requests:
+```
+X-DreamFactory-API-Key: your-generated-api-key-here
+```
+
+## API Docs
+
+Swagger/OpenAPI spec available at:
+```
+GET /api/v2/api_docs
+X-DreamFactory-Session-Token: <token>
+```
+
+## Common Patterns for LLM Code Generation
+
+### Python (requests)
+
+```python
+import requests
+
+BASE = "http://localhost:8088/api/v2"
+
+# Login
+resp = requests.post(f"{BASE}/system/admin/session", data={
+    "email": "you@yourcompany.com",
+    "password": "SecurePassword1234"
+})
+token = resp.json()["session_token"]
+headers = {"X-DreamFactory-Session-Token": token}
+
+# Create a database service
+requests.post(f"{BASE}/system/service", json={
+    "name": "mydb",
+    "label": "My DB",
+    "type": "pgsql",
+    "config": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "mydb",
+        "username": "user",
+        "password": "pass"
+    }
+}, headers=headers)
+
+# List tables
+tables = requests.get(f"{BASE}/mydb/_table", headers=headers).json()
+
+# Get records with filtering
+records = requests.get(f"{BASE}/mydb/_table/users", params={
+    "filter": "age>30",
+    "order": "name ASC",
+    "limit": 10,
+    "fields": "id,name,email"
+}, headers=headers).json()
+
+# Create records
+requests.post(f"{BASE}/mydb/_table/users", json={
+    "resource": [
+        {"name": "Jane", "email": "jane@example.com"}
+    ]
+}, headers=headers)
+
+# Update a record
+requests.patch(f"{BASE}/mydb/_table/users/1", json={
+    "name": "Jane Updated"
+}, headers=headers)
+
+# Delete a record
+requests.delete(f"{BASE}/mydb/_table/users/1", headers=headers)
+```
+
+### JavaScript (fetch)
+
+```javascript
+const BASE = "http://localhost:8088/api/v2";
+
+// Login
+const loginResp = await fetch(`${BASE}/system/admin/session`, {
+  method: "POST",
+  headers: {"Content-Type": "application/x-www-form-urlencoded"},
+  body: "email=you@yourcompany.com&password=SecurePassword1234"
+});
+const {session_token} = await loginResp.json();
+const headers = {
+  "X-DreamFactory-Session-Token": session_token,
+  "Content-Type": "application/json"
+};
+
+// Create a database service
+await fetch(`${BASE}/system/service`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    name: "mydb",
+    label: "My DB",
+    type: "pgsql",
+    config: {host: "localhost", port: 5432, database: "mydb", username: "user", password: "pass"}
+  })
+});
+
+// List tables
+const tables = await fetch(`${BASE}/mydb/_table`, {headers}).then(r => r.json());
+
+// Get records with filtering
+const records = await fetch(
+  `${BASE}/mydb/_table/users?filter=age>30&order=name ASC&limit=10`,
+  {headers}
+).then(r => r.json());
+
+// Create records
+await fetch(`${BASE}/mydb/_table/users`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({resource: [{name: "Jane", email: "jane@example.com"}]})
+});
+
+// Update
+await fetch(`${BASE}/mydb/_table/users/1`, {
+  method: "PATCH",
+  headers,
+  body: JSON.stringify({name: "Jane Updated"})
+});
+
+// Delete
+await fetch(`${BASE}/mydb/_table/users/1`, {method: "DELETE", headers});
+```
+
+### curl
+
+```bash
+# Login
+TOKEN=$(curl -s -X POST "$BASE/system/admin/session" \
+  --data-urlencode "email=you@yourcompany.com" \
+  --data-urlencode "password=SecurePassword1234" \
+  | jq -r '.session_token')
+
+# All subsequent requests use this header
+AUTH="-H X-DreamFactory-Session-Token:$TOKEN"
+
+# List tables
+curl -s $AUTH "$BASE/mydb/_table" | jq
+
+# Get filtered records
+curl -s $AUTH "$BASE/mydb/_table/users?filter=age>30&limit=10" | jq
+
+# Create record
+curl -s -X POST $AUTH -H "Content-Type: application/json" \
+  "$BASE/mydb/_table/users" \
+  -d '{"resource":[{"name":"Jane","email":"jane@example.com"}]}' | jq
+
+# Update record
+curl -s -X PATCH $AUTH -H "Content-Type: application/json" \
+  "$BASE/mydb/_table/users/1" \
+  -d '{"name":"Jane Updated"}' | jq
+
+# Delete record
+curl -s -X DELETE $AUTH "$BASE/mydb/_table/users/1" | jq
+```
+
+## Error Responses
+
+All errors follow this format:
+```json
+{
+  "error": {
+    "code": 401,
+    "context": null,
+    "message": "Invalid credentials supplied.",
+    "status_code": 401
+  }
+}
+```
+
+Common error codes:
+- 400: Bad request (missing required fields)
+- 401: Unauthorized (invalid or expired token)
+- 403: Forbidden (role does not allow this operation)
+- 404: Not found (table or record does not exist)
+- 500: Internal server error
+
+## Gotchas
+
+1. Login uses form-urlencoded (NOT JSON). All other endpoints use JSON.
+2. Records in POST/PATCH to _table endpoints must be wrapped in {"resource": [...]}.
+3. Single record GET by ID returns the object directly (not wrapped in resource array).
+4. Filter strings use SQL-like syntax, not JSON. The filter parameter value is a string.
+5. The session token expires. If you get 401, re-authenticate.
+6. Table names are case-sensitive and match the database exactly.
+7. The base URL path is /api/v2 — do not omit the v2.
+8. Special characters in passwords must be URL-encoded when using form-urlencoded login.
