@@ -1,57 +1,66 @@
 # DreamFactory Mini
 
-**Instant REST APIs from your database. Nothing else.**
+**Turn SQL databases and web services into REST APIs.**
 
-DF Mini is a stripped-down DreamFactory that connects to your database and gives you a full REST API with Swagger docs. No enterprise auth, no scripting engine, no message queues — just your data as an API. There is no admin UI — everything is done via the API itself.
+DreamFactory Mini is a slim, single-container edition of DreamFactory. Connect a database or web service and use the generated REST endpoints to work with its resources. There is no administration UI; setup and configuration are performed through the system API.
 
-## Quick Start
+## Features
+
+- SQL connectors for PostgreSQL, MySQL/MariaDB, SQL Server, and SQLite
+- Remote Web Services (RWS) and SOAP connectors
+- Generated REST endpoints and Swagger/OpenAPI documentation
+- Session-token and API-key authentication
+- SQLite-backed system database and file-based cache
+- Docker Compose deployment with persistent application storage
+
+Mini intentionally omits features available in the [full DreamFactory platform](https://github.com/dreamfactorysoftware/dreamfactory), including the administration UI, MongoDB, enterprise identity integrations, scripting, scheduled tasks, and email.
+
+## Requirements
+
+- Docker Engine with the Docker Compose plugin
+- A reachable database to expose (optional when using SQLite as the data source)
+
+## Quick start
+
+Set credentials in your shell, then build and start the container:
 
 ```bash
-ADMIN_EMAIL=you@yourcompany.com ADMIN_PASSWORD=YourSecurePassword123 docker compose up -d
+export ADMIN_EMAIL='admin@example.com'
+export ADMIN_PASSWORD='replace-with-a-unique-password-of-at-least-16-characters'
+docker compose up -d --build
 ```
 
-That's it. API is at `http://localhost:8088/api/v2`.
-
-> **Note:** First boot runs database migration (~4 seconds).
-
-## What's Included
-
-- **PostgreSQL** connector
-- **MySQL / MariaDB** connector
-- **SQL Server** connector
-- **SQLite** connector
-- **Remote Web Services (RWS)** — proxy any HTTP/REST API
-- **SOAP** connector
-- **Auto-generated REST endpoints** for every table
-- **Swagger/OpenAPI docs** at `/api/v2/api_docs`
-- **JWT session auth + API key auth**
-- **SQLite system database** (zero config)
-- **File-based cache** (no Redis needed)
-
-## What's NOT Included
-
-Everything else. No MongoDB, no AWS, no SAML, no LDAP, no scripting, no scheduler, no email, no admin UI. If you need those, use [full DreamFactory](https://github.com/dreamfactorysoftware/dreamfactory).
-
-## Usage
-
-DF Mini has no admin UI. You manage everything through the REST API. Here's the full workflow.
-
-### 1. Log In
+The API is available at `http://localhost:8088/api/v2`. On first start, the container initializes its system database and creates the administrator account. Check startup output with:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8088/api/v2/system/admin/session \
-  --data-urlencode "email=you@yourdomain.com" \
-  --data-urlencode "password=YourSecurePassword123" \
-  | jq -r '.session_token')
+docker compose logs -f df-mini
 ```
 
-Use the `X-DreamFactory-Session-Token` header for all subsequent requests.
+The Compose file requires both `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Choose a unique, strong password and do not commit credentials to source control.
 
-### 2. Connect Your Database
+## Connect a database
+
+Log in to obtain a session token. The following Bash example requires `curl` and `jq`:
 
 ```bash
-curl -X POST http://localhost:8088/api/v2/system/service \
-  -H "Content-Type: application/json" \
+BASE_URL='http://localhost:8088/api/v2'
+
+TOKEN=$(
+  curl --fail --silent --show-error \
+    -X POST "$BASE_URL/system/admin/session" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "email=$ADMIN_EMAIL" \
+    --data-urlencode "password=$ADMIN_PASSWORD" |
+    jq -r '.session_token'
+)
+```
+
+Create a service for a PostgreSQL database:
+
+```bash
+curl --fail --silent --show-error \
+  -X POST "$BASE_URL/system/service" \
+  -H 'Content-Type: application/json' \
   -H "X-DreamFactory-Session-Token: $TOKEN" \
   -d '{
     "name": "mydb",
@@ -62,114 +71,76 @@ curl -X POST http://localhost:8088/api/v2/system/service \
       "port": 5432,
       "database": "your_database",
       "username": "your_user",
-      "password": "your_password"
+      "password": "your_database_password"
     }
   }'
 ```
 
-That's it — every table in your database now has a REST API.
+Replace the example connection details with values for your database. Once the service is created, tables are available under `/{service-name}/_table`.
 
-### 3. Use Your APIs
+## Use the generated API
+
+List tables and read records using the session token:
 
 ```bash
-# List all tables
-curl http://localhost:8088/api/v2/mydb/_table \
+curl --fail --silent --show-error "$BASE_URL/mydb/_table" \
   -H "X-DreamFactory-Session-Token: $TOKEN"
 
-# Get records from a table
-curl http://localhost:8088/api/v2/mydb/_table/users \
-  -H "X-DreamFactory-Session-Token: $TOKEN"
-
-# Filter records
-curl "http://localhost:8088/api/v2/mydb/_table/users?filter=age%3E30&limit=10" \
-  -H "X-DreamFactory-Session-Token: $TOKEN"
-
-# Create a record
-curl -X POST http://localhost:8088/api/v2/mydb/_table/users \
-  -H "Content-Type: application/json" \
-  -H "X-DreamFactory-Session-Token: $TOKEN" \
-  -d '{"resource": [{"name": "Jane", "email": "jane@example.com"}]}'
-
-# Update a record
-curl -X PATCH http://localhost:8088/api/v2/mydb/_table/users/1 \
-  -H "Content-Type: application/json" \
-  -H "X-DreamFactory-Session-Token: $TOKEN" \
-  -d '{"name": "Jane Updated"}'
-
-# Delete a record
-curl -X DELETE http://localhost:8088/api/v2/mydb/_table/users/1 \
+curl --fail --silent --show-error "$BASE_URL/mydb/_table/users?limit=10" \
   -H "X-DreamFactory-Session-Token: $TOKEN"
 ```
 
-### 4. Create an API Key (for app access without admin session)
+Create a record (bulk table operations use a `resource` array):
 
 ```bash
-# Create a role
-ROLE_ID=$(curl -s -X POST http://localhost:8088/api/v2/system/role \
-  -H "Content-Type: application/json" \
+curl --fail --silent --show-error \
+  -X POST "$BASE_URL/mydb/_table/users" \
+  -H 'Content-Type: application/json' \
   -H "X-DreamFactory-Session-Token: $TOKEN" \
-  -d '{"name": "mydb-reader", "is_active": true}' \
-  | jq -r '.id')
-
-# Create an app with an API key
-curl -X POST http://localhost:8088/api/v2/system/app \
-  -H "Content-Type: application/json" \
-  -H "X-DreamFactory-Session-Token: $TOKEN" \
-  -d "{
-    \"name\": \"my-app\",
-    \"api_key\": \"$(openssl rand -hex 32)\",
-    \"role_id\": $ROLE_ID,
-    \"is_active\": true
-  }"
+  -d '{"resource":[{"name":"Jane","email":"jane@example.com"}]}'
 ```
 
-Then use `X-DreamFactory-API-Key: <key>` header instead of session tokens.
+Table endpoints support the standard REST operations for reading, creating, updating, and deleting records. Use an API key instead of a session token for application access: create an app through the system API and assign it a role scoped to the services, tables, and operations the client needs. Send the key in the `X-DreamFactory-API-Key` header.
 
-### 5. View API Docs
+## Supported service types
 
-Swagger/OpenAPI spec is at `http://localhost:8088/api/v2/api_docs`.
-
-### Service Types
-
-| Database | `type` value |
-|----------|-------------|
+| Service | Type |
+| --- | --- |
 | PostgreSQL | `pgsql` |
-| MySQL / MariaDB | `mysql` |
-| SQL Server | `sqlsrv` |
+| MySQL or MariaDB | `mysql` |
+| Microsoft SQL Server | `sqlsrv` |
 | SQLite | `sqlite` |
 | Remote Web Service | `rws` |
 | SOAP | `soap` |
 
-## Configuration
+## API documentation
 
-All via environment variables:
+The Swagger/OpenAPI endpoint is available at `http://localhost:8088/api/v2/api_docs`. The repository's [`llms.txt`](llms.txt) provides a structured reference for integrating DreamFactory Mini with AI coding tools.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_EMAIL` | `admin@dreamfactory.com` | Admin login email |
-| `ADMIN_PASSWORD` | *(required)* | Admin password |
-| `APP_DEBUG` | `false` | Debug mode |
-| `APP_LOG_LEVEL` | `warning` | Log verbosity |
-| `APP_KEY` | *(auto-generated)* | Laravel app key |
-| `CORS_ORIGIN` | `*` | Allowed CORS origin |
+## Configuration and storage
 
-## Resource Usage
+The supplied Compose configuration requires these variables:
 
-| | DF Mini | Full DF Docker |
-|---|---|---|
-| **Image** | ~410 MB | ~2.6 GB |
-| **RAM** | ~50 MB | ~190 MB |
-| **Startup** | ~4 seconds | ~60 seconds |
-| **Containers** | 1 | 5 |
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `ADMIN_EMAIL` | Yes | Email for the initial administrator account |
+| `ADMIN_PASSWORD` | Yes | Password for the initial administrator account |
 
-## Upgrade Path
+Compose configures SQLite for DreamFactory's system database, disables debug mode, sets the log level to `warning`, and streams application logs to the container output. The named `df-mini-storage` volume persists application storage across container restarts and `docker compose down`.
 
-Outgrown Mini? Full DreamFactory adds MongoDB, 30+ database connectors, enterprise SSO (SAML, LDAP, OAuth), server-side scripting, scheduled tasks, and more.
+Stop the container with `docker compose down`. This preserves the volume. **Do not use `docker compose down -v` unless you intend to delete the persisted application data.**
 
-## LLM / AI Integration
+## Security notes
 
-This repo includes an [`llms.txt`](llms.txt) file — a structured API reference designed for LLMs and AI coding assistants. It contains exact endpoint patterns, request/response shapes, code examples in Python/JavaScript/curl, and common gotchas. Feed it to your LLM to generate correct DF Mini integration code on the first try.
+- The Compose port mapping publishes the API on port `8088` on the host. Restrict network access; do not expose an unprotected instance directly to the public internet.
+- Use a unique administrator password and database credentials with only the permissions the API requires.
+- Give API-key clients narrowly scoped roles. Avoid using the administrator session token in application code.
+- For internet-facing deployments, put the service behind a properly configured TLS-terminating reverse proxy and manage secrets outside the repository.
+
+## Upgrade path
+
+If you need the administration UI, additional connectors, enterprise authentication, scripting, or scheduled tasks, consider the [full DreamFactory platform](https://github.com/dreamfactorysoftware/dreamfactory).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) for details.
+DreamFactory Mini is distributed under the Apache-2.0 license. See [`LICENSE`](LICENSE) for details.
