@@ -12,6 +12,13 @@
 services:
   df-mini:
     build: .
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/api/v2/system/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     environment:
       SERVERNAME: localhost
       DB_CONNECTION: sqlite
