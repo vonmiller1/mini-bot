@@ -63,6 +63,7 @@
     "preferred-install": "dist",
     "sort-packages": true,
     "optimize-autoloader": true,
+    "secure-http": true,
     "allow-plugins": {
       "php-http/discovery": true,
       "dreamfactory/installer": true
