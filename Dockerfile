@@ -43,6 +43,9 @@ RUN PHP_EXT_DIR=$(php -r 'echo PHP_EXTENSION_DIR;') && \
 ###############################################################################
 FROM ubuntu:24.04
 
+LABEL org.opencontainers.image.source="https://github.com/vonmiller1/mini-bot" \
+      org.opencontainers.image.description="DreamFactory Mini — REST APIs from SQL databases"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install all runtime deps in a single layer
