@@ -1,7 +1,13 @@
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 Thumbs.db
 *.swp
 /vendor/
+.idea/
+.vscode/
+storage/
+bootstrap/cache/*.php
+!bootstrap/cache/.gitkeep
